@@ -1,3 +1,8 @@
+use std::{
+    sync::mpsc::{self, Sender},
+    time::Duration,
+};
+
 use anyhow::Result;
 
 use embedded_graphics::{
@@ -13,13 +18,17 @@ use embedded_hal::spi::MODE_0;
 use esp_idf_hal::{
     delay::Ets,
     gpio::PinDriver,
+    i2c::{I2cConfig, I2cDriver},
     peripherals::Peripherals,
     spi::{config, SpiDeviceDriver, SpiDriverConfig},
     units::FromValueType,
 };
 
 use mipidsi::{
-    Builder, interface::SpiInterface, models::ST7789, options::{ColorInversion, ColorOrder, Orientation, Rotation},
+    interface::SpiInterface,
+    models::ST7789,
+    options::{ColorInversion, ColorOrder, Orientation, Rotation},
+    Builder,
 };
 
 fn main() -> Result<()> {
@@ -104,7 +113,45 @@ fn main() -> Result<()> {
         .draw(&mut display)
         .unwrap();
 
+    let i2c_config = I2cConfig::new()
+        .baudrate(300.kHz().into())
+        .sda_enable_pullup(true)
+        .scl_enable_pullup(true);
+
+    let i2c = I2cDriver::new(
+        peripherals.i2c0,
+        peripherals.pins.gpio18, // SDA
+        peripherals.pins.gpio8,  // SCL
+        &i2c_config,
+    )
+    .map_err(|e| anyhow::anyhow!("I2C init failed: {:?}", e))?;
+
+    let (tx, rx) = mpsc::channel::<(u16, u16)>();
+
+    std::thread::spawn(move || touch_polling_loop(i2c, tx));
+
     loop {
-        std::thread::sleep(std::time::Duration::from_secs(1));
+        while let Ok((x, y)) = rx.try_recv() {
+            println!("touch: x={} y={}", x, y);
+            // app_state.handle_touch(x, y);
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+}
+
+fn touch_polling_loop(mut i2c: I2cDriver<'static>, tx: Sender<(u16, u16)>) {
+    const TOUCH_ADDR: u8 = 0x15;
+    let mut buf = [0u8; 7];
+
+    loop {
+        if i2c.write_read(TOUCH_ADDR, &[0x00], &mut buf, 100).is_ok() {
+            let touches = buf[2];
+            if touches > 0 {
+                let y = 170 - ((((buf[3] & 0x0f) as u16) << 8) | buf[4] as u16);
+                let x = (((buf[5] & 0x0f) as u16) << 8) | buf[6] as u16;
+                tx.send((x, y)).ok();
+            }
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
     }
 }
