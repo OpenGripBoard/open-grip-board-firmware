@@ -34,4 +34,7 @@ strum = "0.28.0"
 strum_macros = "0.28.0"
 
 [build-dependencies]
-embuild = "0.33"
+embuild = "0.33.5"
+dotenvy = "0.15.7"
+qrcode = "0.14.1"
+image = { version = "0.25.10", default-features = false, features = ["bmp"] }

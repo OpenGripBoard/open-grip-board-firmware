@@ -12,6 +12,7 @@ use strum::IntoEnumIterator;
 use crate::{
     app_errors::{AppError, AppResult},
     button::Button,
+    clickable_image::ClickableImage,
     icon_button::IconButton,
     view_model::{ActionId, AppDrawable, AppViewModel, Language},
 };
@@ -266,11 +267,12 @@ fn language_selection_screen(model: &AppViewModel) -> Result<Vec<Box<dyn AppDraw
 }
 
 fn connect_app_screen<'a>(model: &AppViewModel) -> Result<Vec<Box<dyn AppDrawable>>, AppError> {
+    const QR_BMP: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/qr.bmp"));
     let elements: Vec<Box<dyn AppDrawable>> = vec![
         Box::new(Background::new(AppColor::DARK)),
         Box::new(Button::new(
             ActionId::Exit,
-            170 + 2* AppSpacing::MEDIUM,
+            170 + 2 * AppSpacing::MEDIUM,
             98 + 2 * AppSpacing::MEDIUM,
             320 - 3 * AppSpacing::MEDIUM - 170,
             48,
@@ -279,6 +281,7 @@ fn connect_app_screen<'a>(model: &AppViewModel) -> Result<Vec<Box<dyn AppDrawabl
             AppColor::LIGHT,
             None,
         )),
+        Box::new(ClickableImage::new(ActionId::None, 0, 0, 170, 170, QR_BMP)),
     ];
     Ok(elements)
 }

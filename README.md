@@ -11,7 +11,7 @@ Firmware for the various OpenGripBoard microcontroller
 
 - [ ] Standalone weight recording
 - [x] Multi language support (de & en)
-- [ ] Display QR-Code for companion app
+- [x] Display QR-Code for companion app
 
 
 ## Developer setup
