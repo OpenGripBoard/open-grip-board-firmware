@@ -2,6 +2,7 @@ use std::sync::mpsc::{self, Sender};
 
 use anyhow::Result;
 
+use embassy_time::{Duration, Instant};
 use embedded_hal::spi::MODE_0;
 
 use esp_idf_hal::{
@@ -83,6 +84,7 @@ fn main() -> Result<()> {
 
     // Backlight ON (active low)
     backlight.set_low()?;
+    let mut backlight_is_on: bool = true;
 
     // Touchscreen over i2c
     let i2c_config = I2cConfig::new()
@@ -109,9 +111,12 @@ fn main() -> Result<()> {
         .set_pixels(0, 0, 319, 169, framebuffer.iter().copied())
         .map_err(|e| anyhow::anyhow!("Display update failed: {:?}", e))?;
 
+    let mut last_touch: Instant = Instant::now();
+
     loop {
         while let Ok(event) = rx.try_recv() {
-            if model.on_touch(event)? {
+            last_touch = Instant::now();
+            if backlight_is_on && model.on_touch(event)? {
                 let mut app_display = AppDisplay::new(&mut framebuffer);
                 model.draw(&mut app_display)?;
                 display
@@ -120,6 +125,15 @@ fn main() -> Result<()> {
             }
         }
         std::thread::sleep(std::time::Duration::from_millis(16));
+        let should_be_on = last_touch.elapsed() <= Duration::from_secs(10);
+        if should_be_on != backlight_is_on {
+            if should_be_on {
+                backlight.set_low()?;
+            } else {
+                backlight.set_high()?;
+            }
+            backlight_is_on = should_be_on;
+        }
     }
 }
 
