@@ -2,7 +2,6 @@ use std::sync::mpsc::{self, Sender};
 
 use anyhow::Result;
 
-
 use embedded_hal::spi::MODE_0;
 
 use esp_idf_hal::{
@@ -20,7 +19,10 @@ use mipidsi::{
     options::{ColorInversion, ColorOrder, Orientation, Rotation},
     Builder,
 };
-use open_grip_board_firmware::views::{View, draw_screen};
+use open_grip_board_firmware::{
+    view_model::{AppViewModel, Language},
+    views::{draw_screen, View},
+};
 
 fn main() -> Result<()> {
     // Required by ESP-IDF
@@ -86,7 +88,16 @@ fn main() -> Result<()> {
     // Backlight ON (active low)
     backlight.set_low()?;
 
-    draw_screen(&mut display, View::Boot)?;
+    let model = AppViewModel {
+        view: View::Boot,
+        wifi_is_connected: false,
+        is_recording: false,
+        max_weight: 0,
+        max_weight_avg: 0,
+        language: Language::De,
+    };
+
+    draw_screen(&mut display, &model)?;
 
     let i2c_config = I2cConfig::new()
         .baudrate(300.kHz().into())
@@ -110,7 +121,7 @@ fn main() -> Result<()> {
             println!("touch: x={} y={}", x, y);
             // app_state.handle_touch(x, y);
             if (0..320).contains(&x) && (0..170).contains(&y) {
-                draw_screen(&mut display, View::HomeScreen)?;
+                draw_screen(&mut display, &model)?;
             }
         }
         std::thread::sleep(std::time::Duration::from_millis(200));

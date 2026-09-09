@@ -17,7 +17,10 @@ use mipidsi::{interface::SpiInterface, models::ST7789, Display};
 
 use tinybmp::Bmp;
 
-use crate::app_errors::{AppError, AppResult};
+use crate::{
+    app_errors::{AppError, AppResult},
+    view_model::AppViewModel,
+};
 
 pub enum View {
     Boot,
@@ -57,10 +60,10 @@ type AppDisplay<'a> = Display<
     PinDriver<'a, Output>,
 >;
 
-pub fn draw_screen<'a>(display: &mut AppDisplay<'_>, view: View) -> AppResult<()> {
-    match view {
+pub fn draw_screen<'a>(display: &mut AppDisplay<'_>, model: &AppViewModel) -> AppResult<()> {
+    match model.view {
         View::Boot => boot_screen(display),
-        View::HomeScreen => home_screen(display),
+        View::HomeScreen => home_screen(display, model.wifi_is_connected),
         View::Recording => recording_screen(display),
         View::LanguageSelection => language_selection_screen(display),
         View::ConnectApp => connect_app_screen(display),
@@ -75,14 +78,14 @@ fn boot_screen<'a>(display: &mut AppDisplay<'_>) -> Result<(), AppError> {
     let center_offset: i32 = 6;
     Text::new(
         "OpenGripBoard",
-        Point::new(text_margin,  screen_height / 2 + center_offset),
+        Point::new(text_margin, screen_height / 2 + center_offset),
         text_style,
     )
     .draw(display)?;
     Ok(())
 }
 
-fn home_screen<'a>(display: &mut AppDisplay<'_>) -> Result<(), AppError> {
+fn home_screen<'a>(display: &mut AppDisplay<'_>, wifi_is_connected: bool) -> Result<(), AppError> {
     display.clear(AppColor::DARK)?;
     button(
         display,
@@ -111,7 +114,11 @@ fn home_screen<'a>(display: &mut AppDisplay<'_>) -> Result<(), AppError> {
         56,
         28,
         "WiFi",
-        AppColor::GOOD,
+        if wifi_is_connected {
+            AppColor::GOOD
+        } else {
+            AppColor::ERROR
+        },
         AppColor::DARK,
     )?;
     icon_button(
@@ -127,6 +134,25 @@ fn home_screen<'a>(display: &mut AppDisplay<'_>) -> Result<(), AppError> {
 }
 
 fn recording_screen<'a>(display: &mut AppDisplay<'_>) -> Result<(), AppError> {
+    button(
+        display,
+        320 - 96 - AppSpacing::MEDIUM,
+        AppSpacing::MEDIUM,
+        96,
+        48,
+        "000.0 kg",
+        AppColor::LIGHT,
+        AppColor::DARK,
+    )?;
+    icon_button(
+        display,
+        320 - 96 - AppSpacing::MEDIUM,
+        2 * AppSpacing::MEDIUM + 48,
+        96,
+        98,
+        AppIcon::PLAY,
+        AppColor::PRIMARY,
+    )?;
     Ok(())
 }
 fn language_selection_screen<'a>(display: &mut AppDisplay<'_>) -> Result<(), AppError> {
