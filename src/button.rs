@@ -1,3 +1,5 @@
+use std::i128::MIN;
+
 use embedded_graphics::{
     geometry::{Point, Size},
     mono_font::MonoTextStyle,
@@ -64,7 +66,7 @@ impl AppDrawable for Button {
         .draw(display)?;
         let text_style = MonoTextStyle::new(&FONT_12X16, self.text_color);
         let button_height: i32 = self.height.try_into().unwrap();
-        let text_margin: i32 = (button_height - 16) / 2;
+        let text_margin: i32 = ((button_height - 16) / 2).min(16);
         let center_offset: i32 = 6;
         Text::new(
             &self.button_text,

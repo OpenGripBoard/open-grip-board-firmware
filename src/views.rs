@@ -144,7 +144,7 @@ fn home_screen(model: &AppViewModel) -> Result<Vec<Box<dyn AppDrawable>>, AppErr
             AppSpacing::MEDIUM,
             AppSpacing::MEDIUM,
             240,
-            48,
+            73,
             model.language.get_str("start_training").to_string(),
             AppColor::PRIMARY,
             AppColor::LIGHT,
@@ -153,9 +153,9 @@ fn home_screen(model: &AppViewModel) -> Result<Vec<Box<dyn AppDrawable>>, AppErr
         Box::new(Button::new(
             ActionId::ConnectApp,
             AppSpacing::MEDIUM,
-            2 * AppSpacing::MEDIUM + 48,
+            2 * AppSpacing::MEDIUM + 73,
             240,
-            48,
+            73,
             model.language.get_str("connect_app").to_string(),
             AppColor::LIGHT,
             AppColor::DARK,
@@ -181,7 +181,7 @@ fn home_screen(model: &AppViewModel) -> Result<Vec<Box<dyn AppDrawable>>, AppErr
             2 * AppSpacing::MEDIUM + 240,
             2 * AppSpacing::MEDIUM + 28,
             56,
-            56,
+            118,
             AppColor::LIGHT,
             AppIcon::GLOBE.try_into().unwrap(),
         )),
@@ -286,8 +286,8 @@ fn language_selection_screen(model: &AppViewModel) -> Result<Vec<Box<dyn AppDraw
             ActionId::LanguageSelection,
             AppSpacing::MEDIUM,
             y_pos,
-            240,
-            48,
+            304,
+            73,
             lang.get_str("lang_name").to_string(),
             if model.language == lang {
                 AppColor::PRIMARY
@@ -301,7 +301,7 @@ fn language_selection_screen(model: &AppViewModel) -> Result<Vec<Box<dyn AppDraw
             },
             Some(lang),
         )));
-        y_pos += AppSpacing::MEDIUM + 48;
+        y_pos += AppSpacing::MEDIUM + 73;
     }
     Ok(elements)
 }
@@ -313,9 +313,9 @@ fn connect_app_screen<'a>(model: &AppViewModel) -> Result<Vec<Box<dyn AppDrawabl
         Box::new(Button::new(
             ActionId::Exit,
             170 + 2 * AppSpacing::MEDIUM,
-            98 + 2 * AppSpacing::MEDIUM,
-            320 - 3 * AppSpacing::MEDIUM - 170,
             48,
+            320 - 3 * AppSpacing::MEDIUM - 170,
+            74,
             model.language.get_str("back").to_string(),
             AppColor::PRIMARY,
             AppColor::LIGHT,
