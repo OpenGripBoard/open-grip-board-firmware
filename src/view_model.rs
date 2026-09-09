@@ -7,6 +7,7 @@ use crate::{
 };
 
 pub enum ActionId {
+    None,
     Default,
     StartRecording,
     LanguageSelection,
@@ -15,6 +16,8 @@ pub enum ActionId {
     Wifi,
     Start,
     Globe,
+    Stop,
+    Exit,
 }
 
 pub struct AppViewModel {
@@ -56,7 +59,7 @@ impl AppViewModel {
         Ok(())
     }
 
-    pub fn on_touch(&mut self, x: u16, y: u16) -> AppResult<(bool)> {
+    pub fn on_touch(&mut self, x: u16, y: u16) -> AppResult<bool> {
         let elapsed = self.last_touch_processed.elapsed();
         if elapsed > Duration::from_millis(300) {
             let ui_elements = get_view_elements(&mut *self)?;
@@ -75,19 +78,15 @@ impl AppViewModel {
     fn execute_action(&mut self, button_id: &ActionId, lang: &Option<Language>) {
         match button_id {
             ActionId::Default => {
-                println!("switching to HomeScreen screen");
                 self.view = View::HomeScreen;
             }
             ActionId::ConnectApp => {
-                println!("switching to ConnectApp screen");
                 self.view = View::ConnectApp;
             }
             ActionId::Globe => {
-                println!("switching to LanguageSelection screen");
                 self.view = View::LanguageSelection;
             }
             ActionId::StartTraining => {
-                println!("switching to Recording screen");
                 self.view = View::Recording;
             }
             ActionId::Wifi => {
@@ -97,6 +96,15 @@ impl AppViewModel {
                 self.language = lang.clone().unwrap_or(Language::De);
                 self.view = View::HomeScreen;
             }
+            ActionId::Start => {
+                self.is_recording = true;
+            }
+            ActionId::Stop => {
+                self.is_recording = false;
+                self.view = View::Statistics;
+            }
+            ActionId::Exit => {self.view = View::HomeScreen;},
+            ActionId::None => {}
             _ => {}
         };
     }

@@ -22,6 +22,7 @@ pub enum View {
     Recording,
     LanguageSelection,
     ConnectApp,
+    Statistics,
 }
 
 struct AppColor;
@@ -45,6 +46,8 @@ struct AppIcon;
 impl AppIcon {
     const PLAY: &[u8] = include_bytes!("../icons/play.bmp");
     const GLOBE: &[u8] = include_bytes!("../icons/globe.bmp");
+    const STOP: &[u8] = include_bytes!("../icons/stop.bmp");
+    const EXIT: &[u8] = include_bytes!("../icons/exit.bmp");
 }
 
 pub type AppDisplay<'a> = Display<
@@ -53,13 +56,24 @@ pub type AppDisplay<'a> = Display<
     PinDriver<'a, Output>,
 >;
 
+struct Background {
+    background_color: Rgb565,
+}
+
+impl Background {
+    pub fn new(background_color: Rgb565) -> Self {
+        Self { background_color }
+    }
+}
+
 pub fn get_view_elements(model: &AppViewModel) -> Result<Vec<Box<dyn AppDrawable>>, AppError> {
     match model.view {
         View::Boot => boot_screen(),
         View::HomeScreen => home_screen(model),
-        View::ConnectApp => connect_app_screen(),
+        View::ConnectApp => connect_app_screen(model),
         View::LanguageSelection => language_selection_screen(model),
         View::Recording => recording_screen(model),
+        View::Statistics => statistics_screen(model),
     }
 }
 
@@ -135,16 +149,6 @@ fn home_screen(model: &AppViewModel) -> Result<Vec<Box<dyn AppDrawable>>, AppErr
     Ok(elements)
 }
 
-struct Background {
-    background_color: Rgb565,
-}
-
-impl Background {
-    pub fn new(background_color: Rgb565) -> Self {
-        Self { background_color }
-    }
-}
-
 impl AppDrawable for Background {
     fn draw(&self, display: &mut AppDisplay<'_>) -> AppResult<()> {
         display.clear(self.background_color)?;
@@ -159,10 +163,54 @@ impl AppDrawable for Background {
 }
 
 fn recording_screen(model: &AppViewModel) -> Result<Vec<Box<dyn AppDrawable>>, AppError> {
+    let mut elements: Vec<Box<dyn AppDrawable>> = vec![
+        Box::new(Background::new(AppColor::DARK)),
+        Box::new(Button::new(
+            ActionId::None,
+            320 - 96 - AppSpacing::MEDIUM,
+            AppSpacing::MEDIUM,
+            96,
+            48,
+            format!(
+                "{} {}",
+                model.current_reading,
+                model.language.get_str("kg").to_string()
+            ),
+            AppColor::LIGHT,
+            AppColor::DARK,
+            None,
+        )),
+    ];
+
+    if model.is_recording {
+        elements.push(Box::new(IconButton::new(
+            ActionId::Stop,
+            320 - 96 - AppSpacing::MEDIUM,
+            2 * AppSpacing::MEDIUM + 48,
+            96,
+            98,
+            AppColor::PRIMARY,
+            AppIcon::STOP.try_into().unwrap(),
+        )));
+    } else {
+        elements.push(Box::new(IconButton::new(
+            ActionId::Start,
+            320 - 96 - AppSpacing::MEDIUM,
+            2 * AppSpacing::MEDIUM + 48,
+            96,
+            98,
+            AppColor::PRIMARY,
+            AppIcon::PLAY.try_into().unwrap(),
+        )));
+    }
+    return Ok(elements);
+}
+
+fn statistics_screen(model: &AppViewModel) -> Result<Vec<Box<dyn AppDrawable>>, AppError> {
     let elements: Vec<Box<dyn AppDrawable>> = vec![
         Box::new(Background::new(AppColor::DARK)),
         Box::new(Button::new(
-            ActionId::StartRecording,
+            ActionId::None,
             320 - 96 - AppSpacing::MEDIUM,
             AppSpacing::MEDIUM,
             96,
@@ -177,13 +225,13 @@ fn recording_screen(model: &AppViewModel) -> Result<Vec<Box<dyn AppDrawable>>, A
             None,
         )),
         Box::new(IconButton::new(
-            ActionId::Start,
+            ActionId::Exit,
             320 - 96 - AppSpacing::MEDIUM,
             2 * AppSpacing::MEDIUM + 48,
             96,
             98,
             AppColor::PRIMARY,
-            AppIcon::PLAY.try_into().unwrap(),
+            AppIcon::EXIT.try_into().unwrap(),
         )),
     ];
     return Ok(elements);
@@ -217,7 +265,20 @@ fn language_selection_screen(model: &AppViewModel) -> Result<Vec<Box<dyn AppDraw
     Ok(elements)
 }
 
-fn connect_app_screen<'a>() -> Result<Vec<Box<dyn AppDrawable>>, AppError> {
-    let elements: Vec<Box<dyn AppDrawable>> = vec![];
+fn connect_app_screen<'a>(model: &AppViewModel) -> Result<Vec<Box<dyn AppDrawable>>, AppError> {
+    let elements: Vec<Box<dyn AppDrawable>> = vec![
+        Box::new(Background::new(AppColor::DARK)),
+        Box::new(Button::new(
+            ActionId::Exit,
+            170 + 2* AppSpacing::MEDIUM,
+            98 + 2 * AppSpacing::MEDIUM,
+            320 - 3 * AppSpacing::MEDIUM - 170,
+            48,
+            model.language.get_str("back").to_string(),
+            AppColor::PRIMARY,
+            AppColor::LIGHT,
+            None,
+        )),
+    ];
     Ok(elements)
 }

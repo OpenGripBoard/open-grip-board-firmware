@@ -19,10 +19,9 @@ use mipidsi::{
     options::{ColorInversion, ColorOrder, Orientation, Rotation},
     Builder,
 };
-use open_grip_board_firmware::{
-    view_model::{AppViewModel, Language},
-    views::{View},
-};
+use open_grip_board_firmware::
+    view_model::AppViewModel
+;
 
 fn main() -> Result<()> {
     // Required by ESP-IDF
