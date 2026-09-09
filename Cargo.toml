@@ -27,6 +27,9 @@ anyhow = "1.0.104"
 embedded-hal = "1.0.0"
 mipidsi = "0.10.0"
 esp-idf-hal = "0.46.2"
+embedded-vintage-fonts = "0.2.0"
+thiserror = "2.0.20"
+tinybmp = "0.7.0"
 
 [build-dependencies]
 embuild = "0.33"

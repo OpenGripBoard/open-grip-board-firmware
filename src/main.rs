@@ -1,17 +1,7 @@
-use std::{
-    sync::mpsc::{self, Sender},
-    time::Duration,
-};
+use std::sync::mpsc::{self, Sender};
 
 use anyhow::Result;
 
-use embedded_graphics::{
-    mono_font::{ascii::FONT_6X10, MonoTextStyle},
-    pixelcolor::Rgb565,
-    prelude::*,
-    primitives::{PrimitiveStyle, Rectangle},
-    text::Text,
-};
 
 use embedded_hal::spi::MODE_0;
 
@@ -30,6 +20,7 @@ use mipidsi::{
     options::{ColorInversion, ColorOrder, Orientation, Rotation},
     Builder,
 };
+use open_grip_board_firmware::views::{View, draw_screen};
 
 fn main() -> Result<()> {
     // Required by ESP-IDF
@@ -95,23 +86,7 @@ fn main() -> Result<()> {
     // Backlight ON (active low)
     backlight.set_low()?;
 
-    // Clear display
-    display
-        .clear(Rgb565::BLACK)
-        .map_err(|e| anyhow::anyhow!("Display initialization failed: {:?}", e))?;
-
-    // Draw red rectangle
-    Rectangle::new(Point::new(10, 10), Size::new(150, 100))
-        .into_styled(PrimitiveStyle::with_fill(Rgb565::RED))
-        .draw(&mut display)
-        .unwrap();
-
-    // Text
-    let text_style = MonoTextStyle::new(&FONT_6X10, Rgb565::WHITE);
-
-    Text::new("Hello ESP32-C6!", Point::new(20, 150), text_style)
-        .draw(&mut display)
-        .unwrap();
+    draw_screen(&mut display, View::Boot)?;
 
     let i2c_config = I2cConfig::new()
         .baudrate(300.kHz().into())
@@ -134,8 +109,11 @@ fn main() -> Result<()> {
         while let Ok((x, y)) = rx.try_recv() {
             println!("touch: x={} y={}", x, y);
             // app_state.handle_touch(x, y);
+            if (0..320).contains(&x) && (0..170).contains(&y) {
+                draw_screen(&mut display, View::HomeScreen)?;
+            }
         }
-        std::thread::sleep(std::time::Duration::from_millis(20));
+        std::thread::sleep(std::time::Duration::from_millis(200));
     }
 }
 
