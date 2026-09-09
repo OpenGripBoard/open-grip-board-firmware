@@ -1,14 +1,3 @@
-use embedded_graphics::{pixelcolor::Rgb565, prelude::*};
-
-use esp_idf_hal::{
-    gpio::{Output, PinDriver},
-    spi::{SpiDeviceDriver, SpiDriver},
-};
-
-use mipidsi::{interface::SpiInterface, models::ST7789, Display};
-
-use strum::IntoEnumIterator;
-
 use crate::{
     app_errors::{AppError, AppResult},
     button::Button,
@@ -16,7 +5,12 @@ use crate::{
     icon_button::IconButton,
     view_model::{ActionId, AppDrawable, AppViewModel, Language},
 };
-
+use embedded_graphics::{
+    draw_target::DrawTarget,
+    geometry::{OriginDimensions, Size},
+};
+use embedded_graphics::{pixelcolor::Rgb565, prelude::*};
+use strum::IntoEnumIterator;
 pub enum View {
     Boot,
     HomeScreen,
@@ -51,11 +45,57 @@ impl AppIcon {
     const EXIT: &[u8] = include_bytes!("../icons/exit.bmp");
 }
 
-pub type AppDisplay<'a> = Display<
-    SpiInterface<'a, SpiDeviceDriver<'a, SpiDriver<'a>>, PinDriver<'a, Output>>,
-    ST7789,
-    PinDriver<'a, Output>,
->;
+pub const DISPLAY_WIDTH: usize = 320;
+pub const DISPLAY_HEIGHT: usize = 170;
+pub const FRAMEBUFFER_SIZE: usize = DISPLAY_WIDTH * DISPLAY_HEIGHT;
+pub struct AppDisplay<'a> {
+    framebuffer: &'a mut [Rgb565],
+}
+
+impl<'a> AppDisplay<'a> {
+    pub fn new(framebuffer: &'a mut [Rgb565]) -> Self {
+        assert_eq!(framebuffer.len(), FRAMEBUFFER_SIZE);
+        Self { framebuffer }
+    }
+    pub fn framebuffer(&self) -> &[Rgb565] {
+        self.framebuffer
+    }
+}
+
+impl OriginDimensions for AppDisplay<'_> {
+    fn size(&self) -> Size {
+        Size::new(DISPLAY_WIDTH as u32, DISPLAY_HEIGHT as u32)
+    }
+}
+
+impl DrawTarget for AppDisplay<'_> {
+    type Color = Rgb565;
+    type Error = AppError;
+
+    fn draw_iter<I>(&mut self, pixels: I) -> Result<(), Self::Error>
+    where
+        I: IntoIterator<Item = Pixel<Self::Color>>,
+    {
+        for Pixel(point, color) in pixels {
+            if point.x < 0
+                || point.y < 0
+                || point.x >= DISPLAY_WIDTH as i32
+                || point.y >= DISPLAY_HEIGHT as i32
+            {
+                continue;
+            }
+            let index = point.y as usize * DISPLAY_WIDTH + point.x as usize;
+            self.framebuffer[index] = color;
+        }
+
+        Ok(())
+    }
+
+    fn clear(&mut self, color: Self::Color) -> Result<(), Self::Error> {
+        self.framebuffer.fill(color);
+        Ok(())
+    }
+}
 
 struct Background {
     background_color: Rgb565,
@@ -152,7 +192,7 @@ fn home_screen(model: &AppViewModel) -> Result<Vec<Box<dyn AppDrawable>>, AppErr
 
 impl AppDrawable for Background {
     fn draw(&self, display: &mut AppDisplay<'_>) -> AppResult<()> {
-        display.clear(self.background_color)?;
+        display.clear(self.background_color).unwrap();
         Ok(())
     }
     fn eval_touch(&self, _x: &u32, _y: &u32) -> bool {

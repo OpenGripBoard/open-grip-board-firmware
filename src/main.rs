@@ -13,15 +13,15 @@ use esp_idf_hal::{
     units::FromValueType,
 };
 
+use embedded_graphics::pixelcolor::{Rgb565, RgbColor};
 use mipidsi::{
     interface::SpiInterface,
     models::ST7789,
     options::{ColorInversion, ColorOrder, Orientation, Rotation},
     Builder,
 };
-use open_grip_board_firmware::
-    view_model::AppViewModel
-;
+use open_grip_board_firmware::view_model::AppViewModel;
+use open_grip_board_firmware::views::AppDisplay;
 
 fn main() -> Result<()> {
     // Required by ESP-IDF
@@ -41,16 +41,13 @@ fn main() -> Result<()> {
 
     let sclk = peripherals.pins.gpio5;
     let mosi = peripherals.pins.gpio4;
-
     let dc = PinDriver::output(peripherals.pins.gpio6)?;
     let cs = peripherals.pins.gpio7;
     let rst = PinDriver::output(peripherals.pins.gpio14)?;
-
     let mut backlight = PinDriver::output(peripherals.pins.gpio15)?;
 
     // Backlight OFF (active low)
     backlight.set_high()?;
-
     let mut delay = Ets;
 
     // SPI
@@ -68,9 +65,9 @@ fn main() -> Result<()> {
         &spi_config,
     )?;
 
-    // mipidsi SPI interface needs a buffer.
+    // framebuffer to build the screen plus second buffer for the mipidsi SPI interface.
+    let mut framebuffer = vec![Rgb565::BLACK; 320 * 170];
     let mut buffer = [0u8; 512];
-
     let display_interface = SpiInterface::new(spi, dc, &mut buffer);
 
     // ST7789V2
@@ -87,9 +84,7 @@ fn main() -> Result<()> {
     // Backlight ON (active low)
     backlight.set_low()?;
 
-    let mut model = AppViewModel::new();
-    model.draw(&mut display)?;
-
+    // Touchscreen over i2c
     let i2c_config = I2cConfig::new()
         .baudrate(300.kHz().into())
         .sda_enable_pullup(true)
@@ -102,27 +97,36 @@ fn main() -> Result<()> {
         &i2c_config,
     )
     .map_err(|e| anyhow::anyhow!("I2C init failed: {:?}", e))?;
+    let (tx, rx) = mpsc::channel::<Option<(u16, u16)>>();
 
-    let (tx, rx) = mpsc::channel::<(u16, u16)>();
-
+    // poll touchscreen in background thread
     std::thread::spawn(move || touch_polling_loop(i2c, tx));
 
+    let mut model = AppViewModel::new();
+    let mut app_display = AppDisplay::new(&mut framebuffer);
+    model.draw(&mut app_display)?;
+    display
+        .set_pixels(0, 0, 319, 169, framebuffer.iter().copied())
+        .map_err(|e| anyhow::anyhow!("Display update failed: {:?}", e))?;
+
     loop {
-        while let Ok((x, y)) = rx.try_recv() {
-            println!("touch: x={} y={}", x, y);
-            // app_state.handle_touch(x, y);
-            let do_refresh = &mut model.on_touch(x, y)?;
-            if *do_refresh{
-                let _ = model.draw(&mut display);
+        while let Ok(event) = rx.try_recv() {
+            if model.on_touch(event)? {
+                let mut app_display = AppDisplay::new(&mut framebuffer);
+                model.draw(&mut app_display)?;
+                display
+                    .set_pixels(0, 0, 319, 169, framebuffer.iter().copied())
+                    .map_err(|e| anyhow::anyhow!("Display update failed: {:?}", e))?;
             }
         }
         std::thread::sleep(std::time::Duration::from_millis(16));
     }
 }
 
-fn touch_polling_loop(mut i2c: I2cDriver<'static>, tx: Sender<(u16, u16)>) {
+fn touch_polling_loop(mut i2c: I2cDriver<'static>, tx: Sender<Option<(u16, u16)>>) {
     const TOUCH_ADDR: u8 = 0x15;
     let mut buf = [0u8; 7];
+    let mut was_touched = false;
 
     loop {
         if i2c.write_read(TOUCH_ADDR, &[0x00], &mut buf, 100).is_ok() {
@@ -130,7 +134,13 @@ fn touch_polling_loop(mut i2c: I2cDriver<'static>, tx: Sender<(u16, u16)>) {
             if touches > 0 {
                 let y = 170 - ((((buf[3] & 0x0f) as u16) << 8) | buf[4] as u16);
                 let x = (((buf[5] & 0x0f) as u16) << 8) | buf[6] as u16;
-                tx.send((x, y)).ok();
+                if !was_touched {
+                    tx.send(Some((x, y))).ok();
+                    was_touched = true;
+                }
+            } else if was_touched {
+                tx.send(None).ok();
+                was_touched = false;
             }
         }
         std::thread::sleep(std::time::Duration::from_millis(20));

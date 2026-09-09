@@ -1,4 +1,3 @@
-use std::time::{Duration, Instant};
 use strum_macros::EnumIter;
 
 use crate::{
@@ -28,7 +27,7 @@ pub struct AppViewModel {
     pub max_weight: u16,
     pub max_weight_avg: u16,
     pub language: Language,
-    last_touch_processed: Instant,
+    touch_active: bool,
 }
 
 pub trait AppDrawable {
@@ -47,7 +46,7 @@ impl AppViewModel {
             max_weight: 0,
             max_weight_avg: 0,
             language: Language::De,
-            last_touch_processed: Instant::now(),
+            touch_active: false,
         }
     }
 
@@ -59,17 +58,24 @@ impl AppViewModel {
         Ok(())
     }
 
-    pub fn on_touch(&mut self, x: u16, y: u16) -> AppResult<bool> {
-        let elapsed = self.last_touch_processed.elapsed();
-        if elapsed > Duration::from_millis(300) {
-            let ui_elements = get_view_elements(&mut *self)?;
-            for element in ui_elements {
-                if element.eval_touch(&x.into(), &y.into()) {
-                    let (button_id, lang) = element.get_id();
-                    self.execute_action(button_id, lang);
-                    self.last_touch_processed = Instant::now();
-                    return Ok(true);
+    pub fn on_touch(&mut self, event: Option<(u16, u16)>) -> AppResult<bool> {
+        match event {
+            Some((x, y)) => {
+                if self.touch_active {
+                    return Ok(false);
                 }
+                self.touch_active = true;
+                let ui_elements = get_view_elements(self)?;
+                for element in ui_elements {
+                    if element.eval_touch(&x.into(), &y.into()) {
+                        let (id, lang) = element.get_id();
+                        self.execute_action(id, lang);
+                        return Ok(true);
+                    }
+                }
+            }
+            None => {
+                self.touch_active = false;
             }
         }
         Ok(false)
@@ -103,7 +109,9 @@ impl AppViewModel {
                 self.is_recording = false;
                 self.view = View::Statistics;
             }
-            ActionId::Exit => {self.view = View::HomeScreen;},
+            ActionId::Exit => {
+                self.view = View::HomeScreen;
+            }
             ActionId::None => {}
             _ => {}
         };
