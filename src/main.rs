@@ -21,7 +21,7 @@ use mipidsi::{
 };
 use open_grip_board_firmware::{
     view_model::{AppViewModel, Language},
-    views::{draw_screen, View},
+    views::{View},
 };
 
 fn main() -> Result<()> {
@@ -88,16 +88,8 @@ fn main() -> Result<()> {
     // Backlight ON (active low)
     backlight.set_low()?;
 
-    let model = AppViewModel {
-        view: View::Boot,
-        wifi_is_connected: false,
-        is_recording: false,
-        max_weight: 0,
-        max_weight_avg: 0,
-        language: Language::De,
-    };
-
-    draw_screen(&mut display, &model)?;
+    let mut model = AppViewModel::new();
+    model.draw(&mut display)?;
 
     let i2c_config = I2cConfig::new()
         .baudrate(300.kHz().into())
@@ -120,11 +112,12 @@ fn main() -> Result<()> {
         while let Ok((x, y)) = rx.try_recv() {
             println!("touch: x={} y={}", x, y);
             // app_state.handle_touch(x, y);
-            if (0..320).contains(&x) && (0..170).contains(&y) {
-                draw_screen(&mut display, &model)?;
+            let do_refresh = &mut model.on_touch(x, y);
+            if *do_refresh{
+            let _ = model.draw(&mut display);
             }
         }
-        std::thread::sleep(std::time::Duration::from_millis(200));
+        std::thread::sleep(std::time::Duration::from_millis(16));
     }
 }
 

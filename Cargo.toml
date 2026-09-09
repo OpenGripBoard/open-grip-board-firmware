@@ -30,6 +30,8 @@ esp-idf-hal = "0.46.2"
 embedded-vintage-fonts = "0.2.0"
 thiserror = "2.0.20"
 tinybmp = "0.7.0"
+strum = "0.28.0"
+strum_macros = "0.28.0"
 
 [build-dependencies]
 embuild = "0.33"
