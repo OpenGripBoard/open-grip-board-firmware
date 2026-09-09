@@ -8,19 +8,14 @@ use embedded_graphics::{
 };
 use embedded_vintage_fonts::FONT_12X16;
 
-use crate::{app_errors::AppResult, view_model::AppDrawable, views::AppDisplay};
-
-pub enum ButtonId {
-    Default,
-    StartRecording,
-    LanguageSelection,
-    StartTraining,
-    ConnectApp,
-    Wifi,
-}
+use crate::{
+    app_errors::AppResult,
+    view_model::{ActionId, AppDrawable, Language},
+    views::AppDisplay,
+};
 
 pub struct Button {
-    id: ButtonId,
+    id: ActionId,
     x: u32,
     y: u32,
     width: u32,
@@ -28,11 +23,12 @@ pub struct Button {
     button_text: String,
     background_color: Rgb565,
     text_color: Rgb565,
+    language: Option<Language>,
 }
 
 impl Button {
     pub fn new(
-        id: ButtonId,
+        id: ActionId,
         x: u32,
         y: u32,
         width: u32,
@@ -40,6 +36,7 @@ impl Button {
         button_text: String,
         background_color: Rgb565,
         text_color: Rgb565,
+        language: Option<Language>,
     ) -> Self {
         Self {
             id,
@@ -50,6 +47,7 @@ impl Button {
             button_text,
             background_color,
             text_color,
+            language,
         }
     }
 }
@@ -75,5 +73,13 @@ impl AppDrawable for Button {
         )
         .draw(display)?;
         Ok(())
+    }
+
+    fn eval_touch(&self, x: &u32, y: &u32) -> bool {
+        (self.x..(self.x + self.width)).contains(x) && (self.y..(self.y + self.height)).contains(y)
+    }
+
+    fn get_id(&self) -> (&ActionId, &Option<Language>) {
+        (&self.id, &self.language)
     }
 }

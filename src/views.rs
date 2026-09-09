@@ -11,9 +11,9 @@ use strum::IntoEnumIterator;
 
 use crate::{
     app_errors::{AppError, AppResult},
-    button::{Button, ButtonId},
-    icon_button::{IconButton, IconButtonId},
-    view_model::{AppDrawable, AppViewModel, Language},
+    button::Button,
+    icon_button::IconButton,
+    view_model::{ActionId, AppDrawable, AppViewModel, Language},
 };
 
 pub enum View {
@@ -59,7 +59,7 @@ pub fn get_view_elements(model: &AppViewModel) -> Result<Vec<Box<dyn AppDrawable
         View::HomeScreen => home_screen(model),
         View::ConnectApp => connect_app_screen(),
         View::LanguageSelection => language_selection_screen(model),
-        View::Recording => recording_screen(),
+        View::Recording => recording_screen(model),
     }
 }
 
@@ -67,7 +67,7 @@ fn boot_screen() -> Result<Vec<Box<dyn AppDrawable>>, AppError> {
     let elements: Vec<Box<dyn AppDrawable>> = vec![
         Box::new(Background::new(AppColor::DARK)),
         Box::new(Button::new(
-            ButtonId::Default,
+            ActionId::Default,
             0,
             0,
             320,
@@ -75,6 +75,7 @@ fn boot_screen() -> Result<Vec<Box<dyn AppDrawable>>, AppError> {
             "OpenGripBoard".to_string(),
             AppColor::PRIMARY,
             AppColor::DARK,
+            None,
         )),
     ];
     Ok(elements)
@@ -84,7 +85,7 @@ fn home_screen(model: &AppViewModel) -> Result<Vec<Box<dyn AppDrawable>>, AppErr
     let elements: Vec<Box<dyn AppDrawable>> = vec![
         Box::new(Background::new(AppColor::DARK)),
         Box::new(Button::new(
-            ButtonId::StartTraining,
+            ActionId::StartTraining,
             AppSpacing::MEDIUM,
             AppSpacing::MEDIUM,
             240,
@@ -92,9 +93,10 @@ fn home_screen(model: &AppViewModel) -> Result<Vec<Box<dyn AppDrawable>>, AppErr
             model.language.get_str("start_training").to_string(),
             AppColor::PRIMARY,
             AppColor::LIGHT,
+            None,
         )),
         Box::new(Button::new(
-            ButtonId::ConnectApp,
+            ActionId::ConnectApp,
             AppSpacing::MEDIUM,
             2 * AppSpacing::MEDIUM + 48,
             240,
@@ -102,9 +104,10 @@ fn home_screen(model: &AppViewModel) -> Result<Vec<Box<dyn AppDrawable>>, AppErr
             model.language.get_str("connect_app").to_string(),
             AppColor::LIGHT,
             AppColor::DARK,
+            None,
         )),
         Box::new(Button::new(
-            ButtonId::Wifi,
+            ActionId::Wifi,
             2 * AppSpacing::MEDIUM + 240,
             AppSpacing::MEDIUM,
             56,
@@ -116,9 +119,10 @@ fn home_screen(model: &AppViewModel) -> Result<Vec<Box<dyn AppDrawable>>, AppErr
                 AppColor::ERROR
             },
             AppColor::DARK,
+            None,
         )),
         Box::new(IconButton::new(
-            IconButtonId::Globe,
+            ActionId::Globe,
             2 * AppSpacing::MEDIUM + 240,
             2 * AppSpacing::MEDIUM + 28,
             56,
@@ -146,27 +150,38 @@ impl AppDrawable for Background {
         display.clear(self.background_color)?;
         Ok(())
     }
+    fn eval_touch(&self, _x: &u32, _y: &u32) -> bool {
+        false
+    }
+    fn get_id(&self) -> (&ActionId, &Option<Language>) {
+        (&ActionId::Default, &None)
+    }
 }
 
-fn recording_screen() -> Result<Vec<Box<dyn AppDrawable>>, AppError> {
+fn recording_screen(model: &AppViewModel) -> Result<Vec<Box<dyn AppDrawable>>, AppError> {
     let elements: Vec<Box<dyn AppDrawable>> = vec![
         Box::new(Background::new(AppColor::DARK)),
         Box::new(Button::new(
-            ButtonId::StartRecording,
+            ActionId::StartRecording,
             320 - 96 - AppSpacing::MEDIUM,
             AppSpacing::MEDIUM,
             96,
             48,
-            "000.0 kg".to_string(),
+            format!(
+                "{} {}",
+                model.current_reading,
+                model.language.get_str("kg").to_string()
+            ),
             AppColor::LIGHT,
             AppColor::DARK,
+            None,
         )),
         Box::new(IconButton::new(
-            IconButtonId::Start,
+            ActionId::Start,
             320 - 96 - AppSpacing::MEDIUM,
-            AppSpacing::MEDIUM,
+            2 * AppSpacing::MEDIUM + 48,
             96,
-            48,
+            98,
             AppColor::PRIMARY,
             AppIcon::PLAY.try_into().unwrap(),
         )),
@@ -179,7 +194,7 @@ fn language_selection_screen(model: &AppViewModel) -> Result<Vec<Box<dyn AppDraw
     let mut elements: Vec<Box<dyn AppDrawable>> = vec![Box::new(Background::new(AppColor::DARK))];
     for lang in Language::iter() {
         elements.push(Box::new(Button::new(
-            ButtonId::LanguageSelection,
+            ActionId::LanguageSelection,
             AppSpacing::MEDIUM,
             y_pos,
             240,
@@ -195,6 +210,7 @@ fn language_selection_screen(model: &AppViewModel) -> Result<Vec<Box<dyn AppDraw
             } else {
                 AppColor::DARK
             },
+            Some(lang),
         )));
         y_pos += AppSpacing::MEDIUM + 48;
     }

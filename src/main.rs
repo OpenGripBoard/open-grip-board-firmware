@@ -112,9 +112,9 @@ fn main() -> Result<()> {
         while let Ok((x, y)) = rx.try_recv() {
             println!("touch: x={} y={}", x, y);
             // app_state.handle_touch(x, y);
-            let do_refresh = &mut model.on_touch(x, y);
+            let do_refresh = &mut model.on_touch(x, y)?;
             if *do_refresh{
-            let _ = model.draw(&mut display);
+                let _ = model.draw(&mut display);
             }
         }
         std::thread::sleep(std::time::Duration::from_millis(16));

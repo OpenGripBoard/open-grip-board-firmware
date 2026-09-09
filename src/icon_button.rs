@@ -7,16 +7,14 @@ use embedded_graphics::{
 };
 use tinybmp::Bmp;
 
-use crate::{app_errors::AppResult, view_model::AppDrawable, views::AppDisplay};
-
-pub enum IconButtonId {
-    Default,
-    Start,
-    Globe,
-}
+use crate::{
+    app_errors::AppResult,
+    view_model::{ActionId, AppDrawable, Language},
+    views::AppDisplay,
+};
 
 pub struct IconButton {
-    id: IconButtonId,
+    id: ActionId,
     x: u32,
     y: u32,
     width: u32,
@@ -27,7 +25,7 @@ pub struct IconButton {
 
 impl IconButton {
     pub fn new(
-        id: IconButtonId,
+        id: ActionId,
         x: u32,
         y: u32,
         width: u32,
@@ -65,5 +63,11 @@ impl AppDrawable for IconButton {
         let bmp = Bmp::from_slice(&self.bmp_data).unwrap();
         Image::new(&bmp, Point::new(x + x_margin, y + y_margin)).draw(display)?;
         Ok(())
+    }
+    fn eval_touch(&self, x: &u32, y: &u32) -> bool {
+        (self.x..(self.x + self.width)).contains(x) && (self.y..(self.y + self.height)).contains(y)
+    }
+    fn get_id(&self) -> (&ActionId, &Option<Language>) {
+        (&self.id, &None)
     }
 }
