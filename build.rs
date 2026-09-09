@@ -15,6 +15,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // Get the value to encode.
     let qr_data = env::var("BOARD_NAME").map_err(|_| "BOARD_NAME is not set in .env")?;
+    println!("cargo:rustc-env=BOARD_NAME={qr_data}");
 
     // Generate QR code.
     let qr = QrCode::with_error_correction_level(qr_data.as_bytes(), EcLevel::M)?;
@@ -68,6 +69,17 @@ fn main() -> Result<(), Box<dyn Error>> {
     image.save_with_format(&output, ImageFormat::Bmp)?;
 
     println!("cargo:warning=Generated QR code: {}", output.display());
+
+    let ssid = env::var("WIFI_SSID").expect("WIFI_SSID not set");
+    println!("cargo:rustc-env=WIFI_SSID={ssid}");
+    let password = env::var("WIFI_PASSWORD").expect("WIFI_PASSWORD not set");
+    println!("cargo:rustc-env=WIFI_PASSWORD={password}");
+    let mqtt_url = env::var("MQTT_URL").expect("MQTT_URL not set");
+    println!("cargo:rustc-env=MQTT_URL={mqtt_url}");
+    let mqtt_user = env::var("MQTT_USER").expect("MQTT_USER not set");
+    println!("cargo:rustc-env=MQTT_USER={mqtt_user}");
+    let mqtt_password = env::var("MQTT_PASSWORD").expect("MQTT_PASSWORD not set");
+    println!("cargo:rustc-env=MQTT_PASSWORD={mqtt_password}");
 
     embuild::espidf::sysenv::output();
 

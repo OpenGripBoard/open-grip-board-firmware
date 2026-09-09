@@ -15,6 +15,11 @@ use esp_idf_hal::{
 };
 
 use embedded_graphics::pixelcolor::{Rgb565, RgbColor};
+use esp_idf_svc::{
+    eventloop::EspSystemEventLoop,
+    mqtt::client::{EspMqttClient, MqttClientConfiguration},
+    wifi::{AuthMethod, ClientConfiguration, Configuration, EspWifi},
+};
 use mipidsi::{
     interface::SpiInterface,
     models::ST7789,
@@ -27,6 +32,9 @@ use open_grip_board_firmware::views::AppDisplay;
 fn main() -> Result<()> {
     // Required by ESP-IDF
     esp_idf_svc::sys::link_patches();
+
+    // set log level
+    esp_idf_svc::log::EspLogger::initialize_default();
 
     let peripherals = Peripherals::take()?;
 
@@ -112,6 +120,57 @@ fn main() -> Result<()> {
         .map_err(|e| anyhow::anyhow!("Display update failed: {:?}", e))?;
 
     let mut last_touch: Instant = Instant::now();
+
+    // init wifi
+    const WIFI_SSID: &str = env!("WIFI_SSID");
+    const WIFI_PASSWORD: &str = env!("WIFI_PASSWORD");
+
+    log::info!("initialize Wifi ...");
+    let sysloop = EspSystemEventLoop::take()?;
+    let mut wifi = EspWifi::new(peripherals.modem, sysloop.clone(), None)?;
+    wifi.set_configuration(&Configuration::Client(ClientConfiguration {
+        ssid: heapless::String::try_from(WIFI_SSID)?,
+        password: heapless::String::try_from(WIFI_PASSWORD)?,
+        auth_method: AuthMethod::WPA2Personal,
+        ..Default::default()
+    }))?;
+    wifi.start()?;
+    wifi.connect()?;
+    log::info!("Connecting to Wi-Fi (SSID: {})...", WIFI_SSID);
+
+    // Wait for L2 association
+    log::info!("waiting for l2 ..");
+    while !wifi.is_connected()? {
+        std::thread::sleep(std::time::Duration::from_millis(200));
+    }
+
+    // Wait for L3 IP assignment
+    loop {
+        let ip_info = wifi.sta_netif().get_ip_info()?;
+        if ip_info.ip != std::net::Ipv4Addr::new(0, 0, 0, 0) {
+            log::info!("Wi-Fi connected with IP: {:?}", ip_info.ip);
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(200));
+    }
+
+    // create MQTT client
+    const MQTT_URL: &str = env!("MQTT_URL");
+    const MQTT_USER: &str = env!("MQTT_USER");
+    const MQTT_PASSWORD: &str = env!("MQTT_PASSWORD");
+    const BOARD_NAME: &str = env!("BOARD_NAME");
+
+    let (us_mqtt_client, us_connection) = EspMqttClient::new(
+        MQTT_URL,
+        &MqttClientConfiguration {
+            client_id: Some(&format!("esp32c6-{}", BOARD_NAME)),
+            username: Some(MQTT_USER),
+            password: Some(MQTT_PASSWORD),
+            ..Default::default()
+        },
+    )?;
+
+    // init Loadcell
 
     loop {
         while let Ok(event) = rx.try_recv() {
