@@ -1,11 +1,7 @@
 # OpenGripBoard Firmware
-Firmware for the various OpenGripBoard microcontroller
+Firmware for the OpenGripBoard microcontroller  
 
-## Supported microcontrollers
-### ESP32-C6-LCD-1.9
-<img src="./docs/img_esp_32_c6_lcd_1.9.png" alt="esp32 1.9 inch lcd board" width="200px">
-
-[waveshare wiki](https://www.waveshare.com/esp32-c6-lcd-1.9.htm)
+<img src="./docs/img_open_grip_board_display.png" alt="esp32 1.9 inch lcd board" height="200px">
 
 ## Features
 
@@ -13,6 +9,11 @@ Firmware for the various OpenGripBoard microcontroller
 - [x] Multi language support (de & en)
 - [x] Display QR-Code for companion app
 
+## Supported microcontrollers
+### ESP32-C6-LCD-1.9
+<img src="./docs/img_esp_32_c6_lcd_1.9.png" alt="esp32 1.9 inch lcd board" height="200px">
+
+[waveshare wiki](https://www.waveshare.com/esp32-c6-lcd-1.9.htm)
 
 ## Developer setup
 
@@ -32,12 +33,17 @@ cargo install espflash --locked
 cargo install ldproxy
 ```
 
+### Configuration
+Some main parameters such as the bard name and WiFi credentials are configurable.  
+Rename the [`.env.example`](./.env.example)-file to `.env` and set the variables accordingly.
 
-### Flash on microcontroller
+
+### Flashing the firmware on the microcontroller
 
 ```bash
 cargo run
 ```
+
 
 ## Useful commands
 
@@ -45,3 +51,11 @@ cargo run
 ```bash
 magick image_file_name.png -alpha off -depth 8 -type TrueColor BMP3:image_file_name.bmp
 ```
+
+---
+### Contributors
+<p align="left">
+  <a href="https://github.com/jonasburkhard">
+    <img src="https://github.com/jonasburkhard.png" width="50" alt="Alice" style="border-radius: 50%;">
+  </a>
+</p>
