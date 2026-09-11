@@ -33,6 +33,7 @@ tinybmp = "0.7.0"
 strum = "0.28.0"
 strum_macros = "0.28.0"
 heapless = "0.9.3"
+hx711 = "0.7.0"
 
 [build-dependencies]
 embuild = "0.33.5"

@@ -212,11 +212,7 @@ fn recording_screen(model: &AppViewModel) -> Result<Vec<Box<dyn AppDrawable>>, A
             AppSpacing::MEDIUM,
             96,
             48,
-            format!(
-                "{} {}",
-                model.current_reading,
-                model.language.get_str("kg").to_string()
-            ),
+            format!("{:.1}", model.current_reading),
             AppColor::LIGHT,
             AppColor::DARK,
             None,
@@ -233,6 +229,25 @@ fn recording_screen(model: &AppViewModel) -> Result<Vec<Box<dyn AppDrawable>>, A
             AppColor::PRIMARY,
             AppIcon::STOP.try_into().unwrap(),
         )));
+        let mut i = 0;
+        let max = 100;
+        model.past_readings.clone().into_iter().for_each(|reading| { 
+            let max_height = 170 - 2 * AppSpacing::MEDIUM-2;
+            let height = ((reading / max as f32) * max_height as f32)
+    .clamp(0.0, max_height as f32) as u32;
+            elements.push(Box::new(Button::new(
+                ActionId::None,
+                AppSpacing::MEDIUM + i*10,
+                170-(AppSpacing::MEDIUM+height-2),
+                AppSpacing::MEDIUM,
+                height +2,
+                "".to_string(),
+                AppColor::LIGHT,
+                AppColor::DARK,
+                None,
+            )));
+            i +=1;
+            })
     } else {
         elements.push(Box::new(IconButton::new(
             ActionId::Start,

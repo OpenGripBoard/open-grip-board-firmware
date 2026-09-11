@@ -1,3 +1,5 @@
+use std::collections::VecDeque;
+
 use strum_macros::EnumIter;
 
 use crate::{
@@ -23,7 +25,8 @@ pub struct AppViewModel {
     pub view: View,
     pub wifi_is_connected: bool,
     pub is_recording: bool,
-    pub current_reading: u16,
+    pub current_reading: f32,
+    pub past_readings: VecDeque<f32>,
     pub max_weight: u16,
     pub max_weight_avg: u16,
     pub language: Language,
@@ -42,7 +45,8 @@ impl AppViewModel {
             view: View::Boot,
             wifi_is_connected: false,
             is_recording: false,
-            current_reading: 0,
+            current_reading: 0.0,
+            past_readings: vec![0.0_f32; 20].into(),
             max_weight: 0,
             max_weight_avg: 0,
             language: Language::De,
@@ -95,9 +99,7 @@ impl AppViewModel {
             ActionId::StartTraining => {
                 self.view = View::Recording;
             }
-            ActionId::Wifi => {
-                self.wifi_is_connected = !self.wifi_is_connected;
-            }
+            ActionId::Wifi => {}
             ActionId::LanguageSelection => {
                 self.language = lang.clone().unwrap_or(Language::De);
                 self.view = View::HomeScreen;

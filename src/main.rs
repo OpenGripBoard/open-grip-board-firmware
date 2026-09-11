@@ -9,7 +9,7 @@ use embedded_hal::spi::MODE_0;
 
 use esp_idf_hal::{
     delay::Ets,
-    gpio::PinDriver,
+    gpio::{Input, Output, PinDriver, Pull},
     i2c::{I2cConfig, I2cDriver},
     modem::Modem,
     peripherals::Peripherals,
@@ -23,6 +23,7 @@ use esp_idf_svc::{
     mqtt::client::{EspMqttClient, EspMqttConnection, MqttClientConfiguration},
     wifi::{AuthMethod, ClientConfiguration, Configuration, EspWifi},
 };
+use hx711::Hx711;
 use mipidsi::{
     interface::SpiInterface,
     models::ST7789,
@@ -132,10 +133,40 @@ fn main() -> Result<()> {
     let mut wifi = init_wifi(modem)?;
 
     // init Loadcell
+    // The pins 3,21,22,23 should be save, 12&13 are SD card
+    let dout = PinDriver::input(pins.gpio22, Pull::Floating)?;
+    let pd_sck = PinDriver::output(pins.gpio23)?;
+    let delay = Ets;
+
+    let mut hx711 = Hx711::new(delay, dout, pd_sck)
+        .map_err(|e| AppError::App(format!("hx711 init failed {:?}", e)))?;
+
+    log::info!("HX711 initialized");
+    // give the hx711 some time before first read
+    std::thread::sleep(std::time::Duration::from_millis(100));
+    let tare_offset = tare_load_cell(&mut hx711, 20)?;
+    let (tx_load, rx_load) = mpsc::channel::<f32>();
+    // poll load cell in background thread
+    std::thread::spawn(move || load_cell_polling_loop(&mut hx711, tx_load, tare_offset, 0.001));
+
     let mut last_wifi_retry = Instant::now();
     let mut should_redraw = false;
     let mut mqtt_ready = false;
     loop {
+        if model.is_recording {
+            let mut latest = None;
+            while let Ok(reading) = rx_load.try_recv() {
+                latest = Some(reading);
+            }
+            if let Some(reading) = latest {
+                log::info!("reading is: {}", reading);
+                model.current_reading = reading;
+                model.past_readings.pop_front();
+                model.past_readings.push_back(reading);
+                should_redraw = true;
+            }
+        }
+
         if wifi.is_connected()? {
             let ip_info = wifi.sta_netif().get_ip_info()?;
             if ip_info.ip != std::net::Ipv4Addr::UNSPECIFIED {
@@ -183,7 +214,7 @@ fn main() -> Result<()> {
             should_redraw = false;
         }
         std::thread::sleep(std::time::Duration::from_millis(16));
-        let should_be_on = last_touch.elapsed() <= Duration::from_secs(20);
+        let should_be_on = last_touch.elapsed() <= Duration::from_secs(60);
         if should_be_on != backlight_is_on {
             if should_be_on {
                 backlight.set_low()?;
@@ -254,4 +285,55 @@ fn init_mqtt<'a>() -> Result<(EspMqttClient<'a>, EspMqttConnection), AppError> {
         },
     )?;
     return Ok((mqtt_client, mqtt_connection));
+}
+
+fn tare_load_cell(
+    hx711: &mut Hx711<Ets, PinDriver<'_, Input>, PinDriver<'_, Output>>,
+    samples: u32,
+) -> Result<i32, AppError> {
+    if samples == 0 {
+        return Err(AppError::App("samples must be > 0".to_string()));
+    }
+    let mut total: i64 = 0;
+    for _ in 0..samples {
+        let raw = hx711
+            .retrieve()
+            .map_err(|_| AppError::App(format!("load cell read failed")))?;
+        total += raw as i64;
+
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    Ok((total / samples as i64) as i32)
+}
+
+fn load_cell_polling_loop(
+    hx711: &mut Hx711<Ets, PinDriver<'_, Input>, PinDriver<'_, Output>>,
+    tx: Sender<f32>,
+    tare_offset: i32,
+    calibration_multiplier: f32,
+) {
+    let n=3;
+    loop {
+        let mut value:f32 = 0.0;
+        let mut actual = 0;
+        while actual<n{
+            match hx711.retrieve(){
+                Ok(raw) => {
+                    log::debug!("HX711 raw: {}", raw as f32);
+                    value += raw as f32
+                }
+                Err(err) => {
+                    log::error!("HX711 error: {:?}", err);
+                }
+            }
+            // Don't hammer the HX711.
+            // The HX711 normally operates at 10 SPS or 80 SPS
+            // depending on the RATE configuration.
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            actual  += 1;
+        }
+        value /= n as f32;
+        value -= tare_offset as f32;
+        tx.send(value * calibration_multiplier).ok();
+    }        
 }
