@@ -5,33 +5,21 @@ use std::{
 
 use anyhow::Result;
 
-use embedded_hal::spi::MODE_0;
-
 use esp_idf_hal::{
     delay::Ets,
-    gpio::{Input, Output, PinDriver, Pull},
-    i2c::{I2cConfig, I2cDriver},
-    modem::Modem,
+    gpio::{Input, Output, PinDriver},
+    i2c::I2cDriver,
     peripherals::Peripherals,
-    spi::{config, SpiDeviceDriver, SpiDriverConfig},
-    units::FromValueType,
 };
 
 use embedded_graphics::pixelcolor::{Rgb565, RgbColor};
-use esp_idf_svc::{
-    eventloop::EspSystemEventLoop,
-    mqtt::client::{EspMqttClient, EspMqttConnection, MqttClientConfiguration},
-    wifi::{AuthMethod, ClientConfiguration, Configuration, EspWifi},
-};
+use esp_idf_svc::mqtt::client::{EspMqttClient, EspMqttConnection};
 use hx711::Hx711;
-use mipidsi::{
-    interface::SpiInterface,
-    models::ST7789,
-    options::{ColorInversion, ColorOrder, Orientation, Rotation},
-    Builder,
-};
-use open_grip_board_firmware::views::AppDisplay;
 use open_grip_board_firmware::{app_errors::AppError, view_model::AppViewModel};
+use open_grip_board_firmware::{
+    init::{init_display, init_i2c, init_load_cell, init_mqtt, init_wifi},
+    views::AppDisplay,
+};
 
 fn main() -> Result<()> {
     // Required by ESP-IDF
@@ -43,78 +31,45 @@ fn main() -> Result<()> {
     let peripherals = Peripherals::take()?;
 
     let Peripherals {
-        modem, i2c0, pins, ..
+        modem,
+        i2c0,
+        pins,
+        spi2,
+        ..
     } = peripherals;
 
-    // Waveshare ESP32-C6-LCD-1.9
-    //
-    // LCD:
-    // MOSI = GPIO4
-    // SCLK = GPIO5
-    // DC   = GPIO6
-    // CS   = GPIO7
-    // RST  = GPIO14
-    // BL   = GPIO15 (LOW = ON)
+    let mut mipidsi_buffer = [0u8; 512];
+    let mut framebuffer = vec![Rgb565::BLACK; 320 * 170];
 
-    let sclk = pins.gpio5;
-    let mosi = pins.gpio4;
-    let dc = PinDriver::output(pins.gpio6)?;
-    let cs = pins.gpio7;
-    let rst = PinDriver::output(pins.gpio14)?;
-    let mut backlight = PinDriver::output(pins.gpio15)?;
-
-    // Backlight OFF (active low)
-    backlight.set_high()?;
-    let mut delay = Ets;
-
-    // SPI
-    let spi_config = config::Config::new()
-        .baudrate(40.MHz().into())
-        .data_mode(MODE_0);
-
-    let spi = SpiDeviceDriver::new_single(
-        peripherals.spi2,
-        sclk,
-        mosi,
-        None::<esp_idf_hal::gpio::AnyIOPin<'_>>,
-        Some(cs),
-        &SpiDriverConfig::new(),
-        &spi_config,
+    let (mut backlight, mut display) = init_display(
+        pins.gpio4,
+        pins.gpio5,
+        pins.gpio6,
+        pins.gpio7,
+        pins.gpio14,
+        pins.gpio15,
+        spi2,
+        &mut mipidsi_buffer,
     )?;
 
-    // framebuffer to build the screen plus second buffer for the mipidsi SPI interface.
-    let mut framebuffer = vec![Rgb565::BLACK; 320 * 170];
-    let mut buffer = [0u8; 512];
-    let display_interface = SpiInterface::new(spi, dc, &mut buffer);
+    // Touchscreen
+    let i2c = init_i2c(
+        pins.gpio18,
+        pins.gpio8,
+        i2c0,
+    )?;
 
-    // ST7789V2
-    let mut display = Builder::new(ST7789, display_interface)
-        .display_size(170, 320)
-        .display_offset(35, 0)
-        .color_order(ColorOrder::Rgb)
-        .invert_colors(ColorInversion::Inverted)
-        .orientation(Orientation::new().rotate(Rotation::Deg90))
-        .reset_pin(rst)
-        .init(&mut delay)
-        .map_err(|e| anyhow::anyhow!("Display initialization failed: {:?}", e))?;
+    // Load cell
+    let mut hx711 = init_load_cell(
+        pins.gpio21,
+        pins.gpio22,
+    )?;
 
     // Backlight ON (active low)
     backlight.set_low()?;
     let mut backlight_is_on: bool = true;
 
     // Touchscreen over i2c
-    let i2c_config = I2cConfig::new()
-        .baudrate(300.kHz().into())
-        .sda_enable_pullup(true)
-        .scl_enable_pullup(true);
-
-    let i2c = I2cDriver::new(
-        i2c0,
-        pins.gpio18, // SDA
-        pins.gpio8,  // SCL
-        &i2c_config,
-    )
-    .map_err(|e| anyhow::anyhow!("I2C init failed: {:?}", e))?;
     let (tx_touch, rx_touch) = mpsc::channel::<Option<(u16, u16)>>();
 
     // poll touchscreen in background thread
@@ -132,18 +87,9 @@ fn main() -> Result<()> {
     // WiFi
     let mut wifi = init_wifi(modem)?;
 
-    // init Loadcell
-    // The pins 3,21,22,23 should be save, 12&13 are SD card
-    let dout = PinDriver::input(pins.gpio22, Pull::Floating)?;
-    let pd_sck = PinDriver::output(pins.gpio23)?;
-    let delay = Ets;
-
-    let mut hx711 = Hx711::new(delay, dout, pd_sck)
-        .map_err(|e| AppError::App(format!("hx711 init failed {:?}", e)))?;
-
     log::info!("HX711 initialized");
     // give the hx711 some time before first read
-    std::thread::sleep(std::time::Duration::from_millis(100));
+    std::thread::sleep(std::time::Duration::from_millis(1000));
     let tare_offset = tare_load_cell(&mut hx711, 20)?;
     let (tx_load, rx_load) = mpsc::channel::<f32>();
     // poll load cell in background thread
@@ -151,7 +97,9 @@ fn main() -> Result<()> {
 
     let mut last_wifi_retry = Instant::now();
     let mut should_redraw = false;
-    let mut mqtt_ready = false;
+    let mut mqtt_client: Option<EspMqttClient> = None;
+    let mut mqtt_connection: Option<EspMqttConnection> = None;
+    const BOARD_NAME: &str = env!("BOARD_NAME");
     loop {
         if model.is_recording {
             let mut latest = None;
@@ -161,6 +109,7 @@ fn main() -> Result<()> {
             if let Some(reading) = latest {
                 log::info!("reading is: {}", reading);
                 model.current_reading = reading;
+
                 model.past_readings.pop_front();
                 model.past_readings.push_back(reading);
                 should_redraw = true;
@@ -186,7 +135,8 @@ fn main() -> Result<()> {
                 should_redraw = true
             }
             model.wifi_is_connected = false;
-            mqtt_ready = false;
+            mqtt_client = None;
+            mqtt_connection = None;
             if last_wifi_retry.elapsed() >= Duration::from_secs(5) {
                 log::info!("Wi-Fi disconnected, attempting reconnect...");
                 wifi.connect()?;
@@ -194,9 +144,22 @@ fn main() -> Result<()> {
             }
         }
 
-        if !mqtt_ready && model.wifi_is_connected {
-            let (mqtt_client, mqtt_connection) = init_mqtt()?;
-            mqtt_ready = true;
+        if mqtt_client.is_none() && model.wifi_is_connected {
+            let (client, connection) = init_mqtt()?;
+
+            std::thread::spawn(move || {
+                let mut connection = connection;
+
+                while let Ok(event) = connection.next() {
+                    log::debug!("MQTT event: {:?}", event.payload());
+                }
+
+                log::warn!("MQTT connection thread ended");
+            });
+
+            mqtt_client = Some(client);
+
+            log::info!("MQTT client initialized");
         }
 
         while let Ok(event) = rx_touch.try_recv() {
@@ -250,43 +213,6 @@ fn touch_polling_loop(mut i2c: I2cDriver<'static>, tx: Sender<Option<(u16, u16)>
     }
 }
 
-fn init_wifi<'a>(modem: Modem<'a>) -> Result<EspWifi<'a>, AppError> {
-    // init wifi
-    const WIFI_SSID: &str = env!("WIFI_SSID");
-    const WIFI_PASSWORD: &str = env!("WIFI_PASSWORD");
-    log::info!("initialize Wifi ...");
-    let sysloop = EspSystemEventLoop::take()?;
-    let mut wifi = EspWifi::new(modem, sysloop.clone(), None)?;
-    wifi.set_configuration(&Configuration::Client(ClientConfiguration {
-        ssid: heapless::String::try_from(WIFI_SSID)?,
-        password: heapless::String::try_from(WIFI_PASSWORD)?,
-        auth_method: AuthMethod::WPA2Personal,
-        ..Default::default()
-    }))?;
-    wifi.start()?;
-    wifi.connect()?;
-    log::info!("Connecting to Wi-Fi (SSID: {})...", WIFI_SSID);
-    return Ok(wifi);
-}
-
-fn init_mqtt<'a>() -> Result<(EspMqttClient<'a>, EspMqttConnection), AppError> {
-    const MQTT_URL: &str = env!("MQTT_URL");
-    const MQTT_USER: &str = env!("MQTT_USER");
-    const MQTT_PASSWORD: &str = env!("MQTT_PASSWORD");
-    const BOARD_NAME: &str = env!("BOARD_NAME");
-
-    let (mqtt_client, mqtt_connection) = EspMqttClient::new(
-        MQTT_URL,
-        &MqttClientConfiguration {
-            client_id: Some(&format!("esp32c6-{}", BOARD_NAME)),
-            username: Some(MQTT_USER),
-            password: Some(MQTT_PASSWORD),
-            ..Default::default()
-        },
-    )?;
-    return Ok((mqtt_client, mqtt_connection));
-}
-
 fn tare_load_cell(
     hx711: &mut Hx711<Ets, PinDriver<'_, Input>, PinDriver<'_, Output>>,
     samples: u32,
@@ -312,12 +238,12 @@ fn load_cell_polling_loop(
     tare_offset: i32,
     calibration_multiplier: f32,
 ) {
-    let n=3;
+    let n = 3;
     loop {
-        let mut value:f32 = 0.0;
+        let mut value: f32 = 0.0;
         let mut actual = 0;
-        while actual<n{
-            match hx711.retrieve(){
+        while actual < n {
+            match hx711.retrieve() {
                 Ok(raw) => {
                     log::debug!("HX711 raw: {}", raw as f32);
                     value += raw as f32
@@ -330,10 +256,10 @@ fn load_cell_polling_loop(
             // The HX711 normally operates at 10 SPS or 80 SPS
             // depending on the RATE configuration.
             std::thread::sleep(std::time::Duration::from_millis(100));
-            actual  += 1;
+            actual += 1;
         }
         value /= n as f32;
         value -= tare_offset as f32;
         tx.send(value * calibration_multiplier).ok();
-    }        
+    }
 }
