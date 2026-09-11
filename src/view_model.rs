@@ -27,8 +27,8 @@ pub struct AppViewModel {
     pub is_recording: bool,
     pub current_reading: f32,
     pub past_readings: VecDeque<f32>,
-    pub max_weight: u16,
-    pub max_weight_avg: u16,
+    pub max_weight: f32,
+    pub max_weight_avg: f32,
     pub language: Language,
     touch_active: bool,
 }
@@ -47,8 +47,8 @@ impl AppViewModel {
             is_recording: false,
             current_reading: 0.0,
             past_readings: vec![0.0_f32; 20].into(),
-            max_weight: 0,
-            max_weight_avg: 0,
+            max_weight: 0.0,
+            max_weight_avg: 0.0,
             language: Language::De,
             touch_active: false,
         }
@@ -105,6 +105,9 @@ impl AppViewModel {
                 self.view = View::HomeScreen;
             }
             ActionId::Start => {
+                self.past_readings = vec![0.0_f32; 20].into();
+                self.max_weight = 0.0;
+                self.max_weight_avg = 0.0;
                 self.is_recording = true;
             }
             ActionId::Stop => {
@@ -118,9 +121,6 @@ impl AppViewModel {
             _ => {}
         };
     }
-
-    pub fn on_start_training() {}
-    pub fn on_connect_app() {}
 }
 
 pub struct TouchZone {
@@ -173,12 +173,12 @@ impl Language {
                 Language::En => "Everything is ready, you can start recording",
             },
             "max_weight" => match self {
-                Language::De => "Maximales Gewicht",
-                Language::En => "Maximum weight",
+                Language::De => "Maximales\nGewicht:",
+                Language::En => "Maximum\nweight:",
             },
             "max_weight_avg" => match self {
-                Language::De => "Maximales Gewicht 5s",
-                Language::En => "Maximum weight 5s",
+                Language::De => "Maximales\nGewicht 4s:",
+                Language::En => "Maximum\nweight 4s:",
             },
             "lang_name" => match self {
                 Language::De => "Deutsch",

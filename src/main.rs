@@ -86,6 +86,7 @@ fn main() -> Result<()> {
     let mut mqtt_client: Option<EspMqttClient> = None;
     let mut _mqtt_connection: Option<EspMqttConnection> = None;
     let mut should_redraw = true;
+
     loop {
         // redraw display
         if should_redraw {
@@ -140,6 +141,18 @@ fn main() -> Result<()> {
                 model.current_reading = reading;
                 model.past_readings.pop_front();
                 model.past_readings.push_back(reading);
+                if reading > model.max_weight {
+                    model.max_weight = reading
+                };
+                let lowest_past_reading = model
+                    .past_readings
+                    .iter()
+                    .copied()
+                    .reduce(f32::min)
+                    .unwrap();
+                if lowest_past_reading > model.max_weight_avg {
+                    model.max_weight_avg = lowest_past_reading
+                };
                 should_redraw = true;
                 // publish readings
                 if let Some(client) = &mut mqtt_client {
@@ -172,7 +185,7 @@ fn main() -> Result<()> {
             }
             backlight_is_on = should_be_on;
         }
-        std::thread::sleep(std::time::Duration::from_millis(16));
+        std::thread::sleep(std::time::Duration::from_millis(10));
     }
 }
 
@@ -225,7 +238,7 @@ fn load_cell_polling_loop(
     tare_offset: i32,
     calibration_multiplier: f32,
 ) {
-    let n = 3;
+    let n = 2;
     loop {
         let mut value: f32 = 0.0;
         let mut actual = 0;
@@ -233,7 +246,8 @@ fn load_cell_polling_loop(
             match hx711.retrieve() {
                 Ok(raw) => {
                     log::debug!("HX711 raw: {}", raw as f32);
-                    value += raw as f32
+                    value += raw as f32;
+                    actual += 1;
                 }
                 Err(err) => {
                     log::error!("HX711 error: {:?}", err);
@@ -243,7 +257,6 @@ fn load_cell_polling_loop(
             // The HX711 normally operates at 10 SPS or 80 SPS
             // depending on the RATE configuration.
             std::thread::sleep(std::time::Duration::from_millis(100));
-            actual += 1;
         }
         value /= n as f32;
         value -= tare_offset as f32;

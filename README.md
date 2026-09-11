@@ -5,9 +5,10 @@ Firmware for the OpenGripBoard microcontroller
 
 ## Features
 
-- [ ] Standalone weight recording
+- [x] Standalone weight recording
 - [x] Multi language support (de & en)
 - [x] Display QR-Code for companion app
+- [x] Publish weight recordings to MQTT-Broker
 
 ## Supported microcontrollers
 ### ESP32-C6-LCD-1.9

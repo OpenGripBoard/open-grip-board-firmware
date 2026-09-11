@@ -231,23 +231,23 @@ fn recording_screen(model: &AppViewModel) -> Result<Vec<Box<dyn AppDrawable>>, A
         )));
         let mut i = 0;
         let max = 100;
-        model.past_readings.clone().into_iter().for_each(|reading| { 
-            let max_height = 170 - 2 * AppSpacing::MEDIUM-2;
-            let height = ((reading / max as f32) * max_height as f32)
-    .clamp(0.0, max_height as f32) as u32;
+        model.past_readings.clone().into_iter().for_each(|reading| {
+            let max_height = 170 - 2 * AppSpacing::MEDIUM - 2;
+            let height =
+                ((reading / max as f32) * max_height as f32).clamp(0.0, max_height as f32) as u32;
             elements.push(Box::new(Button::new(
                 ActionId::None,
-                AppSpacing::MEDIUM + i*10,
-                170-(AppSpacing::MEDIUM+height-2),
+                AppSpacing::MEDIUM + i * 10,
+                170 - (AppSpacing::MEDIUM + height - 2),
                 AppSpacing::MEDIUM,
-                height +2,
+                height + 2,
                 "".to_string(),
                 AppColor::LIGHT,
                 AppColor::DARK,
                 None,
             )));
-            i +=1;
-            })
+            i += 1;
+        })
     } else {
         elements.push(Box::new(IconButton::new(
             ActionId::Start,
@@ -271,11 +271,7 @@ fn statistics_screen(model: &AppViewModel) -> Result<Vec<Box<dyn AppDrawable>>, 
             AppSpacing::MEDIUM,
             96,
             48,
-            format!(
-                "{} {}",
-                model.current_reading,
-                model.language.get_str("kg").to_string()
-            ),
+            format!("0.0 {}", model.language.get_str("kg").to_string()),
             AppColor::LIGHT,
             AppColor::DARK,
             None,
@@ -288,6 +284,36 @@ fn statistics_screen(model: &AppViewModel) -> Result<Vec<Box<dyn AppDrawable>>, 
             98,
             AppColor::PRIMARY,
             AppIcon::EXIT.try_into().unwrap(),
+        )),
+        Box::new(Button::new(
+            ActionId::None,
+            AppSpacing::MEDIUM,
+            0,
+            320 - 3 * AppSpacing::MEDIUM - 96,
+            73,
+            format!(
+                "{}\n{}",
+                model.language.get_str("max_weight").to_string(),
+                format!("{:.1} kg", model.max_weight)
+            ),
+            AppColor::DARK,
+            AppColor::LIGHT,
+            None,
+        )),
+        Box::new(Button::new(
+            ActionId::None,
+            AppSpacing::MEDIUM,
+            AppSpacing::MEDIUM + 73,
+            320 - 3 * AppSpacing::MEDIUM - 96,
+            73,
+            format!(
+                "{}\n{}",
+                model.language.get_str("max_weight_avg").to_string(),
+                format!("{:.1} kg", model.max_weight_avg)
+            ),
+            AppColor::DARK,
+            AppColor::LIGHT,
+            None,
         )),
     ];
     return Ok(elements);

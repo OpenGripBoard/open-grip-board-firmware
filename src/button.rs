@@ -1,5 +1,3 @@
-use std::i128::MIN;
-
 use embedded_graphics::{
     geometry::{Point, Size},
     mono_font::MonoTextStyle,
