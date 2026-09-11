@@ -71,8 +71,8 @@ pub fn init_mqtt<'a>() -> Result<(EspMqttClient<'a>, EspMqttConnection), AppErro
 }
 
 pub fn init_load_cell(
-    gpio21: Gpio21<'static>,
-    gpio22: Gpio22<'static>,
+    gpio21: Gpio22<'static>,
+    gpio22: Gpio23<'static>,
 ) -> Result<
     Hx711<
         Ets,
