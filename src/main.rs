@@ -1,14 +1,17 @@
-use std::sync::mpsc::{self, Sender};
+use std::{
+    sync::mpsc::{self, Sender},
+    time::{Duration, Instant},
+};
 
 use anyhow::Result;
 
-use embassy_time::{Duration, Instant};
 use embedded_hal::spi::MODE_0;
 
 use esp_idf_hal::{
     delay::Ets,
     gpio::PinDriver,
     i2c::{I2cConfig, I2cDriver},
+    modem::Modem,
     peripherals::Peripherals,
     spi::{config, SpiDeviceDriver, SpiDriverConfig},
     units::FromValueType,
@@ -17,7 +20,7 @@ use esp_idf_hal::{
 use embedded_graphics::pixelcolor::{Rgb565, RgbColor};
 use esp_idf_svc::{
     eventloop::EspSystemEventLoop,
-    mqtt::client::{EspMqttClient, MqttClientConfiguration},
+    mqtt::client::{EspMqttClient, EspMqttConnection, MqttClientConfiguration},
     wifi::{AuthMethod, ClientConfiguration, Configuration, EspWifi},
 };
 use mipidsi::{
@@ -26,8 +29,8 @@ use mipidsi::{
     options::{ColorInversion, ColorOrder, Orientation, Rotation},
     Builder,
 };
-use open_grip_board_firmware::view_model::AppViewModel;
 use open_grip_board_firmware::views::AppDisplay;
+use open_grip_board_firmware::{app_errors::AppError, view_model::AppViewModel};
 
 fn main() -> Result<()> {
     // Required by ESP-IDF
@@ -37,6 +40,10 @@ fn main() -> Result<()> {
     esp_idf_svc::log::EspLogger::initialize_default();
 
     let peripherals = Peripherals::take()?;
+
+    let Peripherals {
+        modem, i2c0, pins, ..
+    } = peripherals;
 
     // Waveshare ESP32-C6-LCD-1.9
     //
@@ -48,12 +55,12 @@ fn main() -> Result<()> {
     // RST  = GPIO14
     // BL   = GPIO15 (LOW = ON)
 
-    let sclk = peripherals.pins.gpio5;
-    let mosi = peripherals.pins.gpio4;
-    let dc = PinDriver::output(peripherals.pins.gpio6)?;
-    let cs = peripherals.pins.gpio7;
-    let rst = PinDriver::output(peripherals.pins.gpio14)?;
-    let mut backlight = PinDriver::output(peripherals.pins.gpio15)?;
+    let sclk = pins.gpio5;
+    let mosi = pins.gpio4;
+    let dc = PinDriver::output(pins.gpio6)?;
+    let cs = pins.gpio7;
+    let rst = PinDriver::output(pins.gpio14)?;
+    let mut backlight = PinDriver::output(pins.gpio15)?;
 
     // Backlight OFF (active low)
     backlight.set_high()?;
@@ -101,16 +108,16 @@ fn main() -> Result<()> {
         .scl_enable_pullup(true);
 
     let i2c = I2cDriver::new(
-        peripherals.i2c0,
-        peripherals.pins.gpio18, // SDA
-        peripherals.pins.gpio8,  // SCL
+        i2c0,
+        pins.gpio18, // SDA
+        pins.gpio8,  // SCL
         &i2c_config,
     )
     .map_err(|e| anyhow::anyhow!("I2C init failed: {:?}", e))?;
-    let (tx, rx) = mpsc::channel::<Option<(u16, u16)>>();
+    let (tx_touch, rx_touch) = mpsc::channel::<Option<(u16, u16)>>();
 
     // poll touchscreen in background thread
-    std::thread::spawn(move || touch_polling_loop(i2c, tx));
+    std::thread::spawn(move || touch_polling_loop(i2c, tx_touch));
 
     let mut model = AppViewModel::new();
     let mut app_display = AppDisplay::new(&mut framebuffer);
@@ -121,70 +128,62 @@ fn main() -> Result<()> {
 
     let mut last_touch: Instant = Instant::now();
 
-    // init wifi
-    const WIFI_SSID: &str = env!("WIFI_SSID");
-    const WIFI_PASSWORD: &str = env!("WIFI_PASSWORD");
-
-    log::info!("initialize Wifi ...");
-    let sysloop = EspSystemEventLoop::take()?;
-    let mut wifi = EspWifi::new(peripherals.modem, sysloop.clone(), None)?;
-    wifi.set_configuration(&Configuration::Client(ClientConfiguration {
-        ssid: heapless::String::try_from(WIFI_SSID)?,
-        password: heapless::String::try_from(WIFI_PASSWORD)?,
-        auth_method: AuthMethod::WPA2Personal,
-        ..Default::default()
-    }))?;
-    wifi.start()?;
-    wifi.connect()?;
-    log::info!("Connecting to Wi-Fi (SSID: {})...", WIFI_SSID);
-
-    // Wait for L2 association
-    log::info!("waiting for l2 ..");
-    while !wifi.is_connected()? {
-        std::thread::sleep(std::time::Duration::from_millis(200));
-    }
-
-    // Wait for L3 IP assignment
-    loop {
-        let ip_info = wifi.sta_netif().get_ip_info()?;
-        if ip_info.ip != std::net::Ipv4Addr::new(0, 0, 0, 0) {
-            log::info!("Wi-Fi connected with IP: {:?}", ip_info.ip);
-            break;
-        }
-        std::thread::sleep(std::time::Duration::from_millis(200));
-    }
-
-    // create MQTT client
-    const MQTT_URL: &str = env!("MQTT_URL");
-    const MQTT_USER: &str = env!("MQTT_USER");
-    const MQTT_PASSWORD: &str = env!("MQTT_PASSWORD");
-    const BOARD_NAME: &str = env!("BOARD_NAME");
-
-    let (us_mqtt_client, us_connection) = EspMqttClient::new(
-        MQTT_URL,
-        &MqttClientConfiguration {
-            client_id: Some(&format!("esp32c6-{}", BOARD_NAME)),
-            username: Some(MQTT_USER),
-            password: Some(MQTT_PASSWORD),
-            ..Default::default()
-        },
-    )?;
+    // WiFi
+    let mut wifi = init_wifi(modem)?;
 
     // init Loadcell
-
+    let mut last_wifi_retry = Instant::now();
+    let mut should_redraw = false;
+    let mut mqtt_ready = false;
     loop {
-        while let Ok(event) = rx.try_recv() {
-            last_touch = Instant::now();
-            if backlight_is_on && model.on_touch(event)? {
-                let mut app_display = AppDisplay::new(&mut framebuffer);
-                model.draw(&mut app_display)?;
-                display
-                    .set_pixels(0, 0, 319, 169, framebuffer.iter().copied())
-                    .map_err(|e| anyhow::anyhow!("Display update failed: {:?}", e))?;
+        if wifi.is_connected()? {
+            let ip_info = wifi.sta_netif().get_ip_info()?;
+            if ip_info.ip != std::net::Ipv4Addr::UNSPECIFIED {
+                if !model.wifi_is_connected {
+                    log::info!("Wi-Fi connected with IP: {:?}", ip_info.ip);
+                    should_redraw = true;
+                }
+                model.wifi_is_connected = true;
+            } else {
+                if model.wifi_is_connected {
+                    should_redraw = true
+                }
+                model.wifi_is_connected = false;
+            }
+        } else {
+            if model.wifi_is_connected {
+                should_redraw = true
+            }
+            model.wifi_is_connected = false;
+            mqtt_ready = false;
+            if last_wifi_retry.elapsed() >= Duration::from_secs(5) {
+                log::info!("Wi-Fi disconnected, attempting reconnect...");
+                wifi.connect()?;
+                last_wifi_retry = Instant::now();
             }
         }
+
+        if !mqtt_ready && model.wifi_is_connected {
+            let (mqtt_client, mqtt_connection) = init_mqtt()?;
+            mqtt_ready = true;
+        }
+
+        while let Ok(event) = rx_touch.try_recv() {
+            last_touch = Instant::now();
+            if backlight_is_on && model.on_touch(event)? {
+                should_redraw = true;
+            }
+        }
+        if should_redraw {
+            let mut app_display = AppDisplay::new(&mut framebuffer);
+            model.draw(&mut app_display)?;
+            display
+                .set_pixels(0, 0, 319, 169, framebuffer.iter().copied())
+                .map_err(|e| anyhow::anyhow!("Display update failed: {:?}", e))?;
+            should_redraw = false;
+        }
         std::thread::sleep(std::time::Duration::from_millis(16));
-        let should_be_on = last_touch.elapsed() <= Duration::from_secs(10);
+        let should_be_on = last_touch.elapsed() <= Duration::from_secs(20);
         if should_be_on != backlight_is_on {
             if should_be_on {
                 backlight.set_low()?;
@@ -218,4 +217,41 @@ fn touch_polling_loop(mut i2c: I2cDriver<'static>, tx: Sender<Option<(u16, u16)>
         }
         std::thread::sleep(std::time::Duration::from_millis(20));
     }
+}
+
+fn init_wifi<'a>(modem: Modem<'a>) -> Result<EspWifi<'a>, AppError> {
+    // init wifi
+    const WIFI_SSID: &str = env!("WIFI_SSID");
+    const WIFI_PASSWORD: &str = env!("WIFI_PASSWORD");
+    log::info!("initialize Wifi ...");
+    let sysloop = EspSystemEventLoop::take()?;
+    let mut wifi = EspWifi::new(modem, sysloop.clone(), None)?;
+    wifi.set_configuration(&Configuration::Client(ClientConfiguration {
+        ssid: heapless::String::try_from(WIFI_SSID)?,
+        password: heapless::String::try_from(WIFI_PASSWORD)?,
+        auth_method: AuthMethod::WPA2Personal,
+        ..Default::default()
+    }))?;
+    wifi.start()?;
+    wifi.connect()?;
+    log::info!("Connecting to Wi-Fi (SSID: {})...", WIFI_SSID);
+    return Ok(wifi);
+}
+
+fn init_mqtt<'a>() -> Result<(EspMqttClient<'a>, EspMqttConnection), AppError> {
+    const MQTT_URL: &str = env!("MQTT_URL");
+    const MQTT_USER: &str = env!("MQTT_USER");
+    const MQTT_PASSWORD: &str = env!("MQTT_PASSWORD");
+    const BOARD_NAME: &str = env!("BOARD_NAME");
+
+    let (mqtt_client, mqtt_connection) = EspMqttClient::new(
+        MQTT_URL,
+        &MqttClientConfiguration {
+            client_id: Some(&format!("esp32c6-{}", BOARD_NAME)),
+            username: Some(MQTT_USER),
+            password: Some(MQTT_PASSWORD),
+            ..Default::default()
+        },
+    )?;
+    return Ok((mqtt_client, mqtt_connection));
 }
